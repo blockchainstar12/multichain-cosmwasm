@@ -5,7 +5,7 @@ use cw721::CancellationItem;
 use cw721::Expiration;
 use cw_ownable::{cw_ownable_execute, cw_ownable_query};
 use schemars::JsonSchema;
-use crate::state::ChainOwner;
+use cw721::common::ChainOwner;
 
 #[cw_serde]
 pub struct InstantiateMsg {

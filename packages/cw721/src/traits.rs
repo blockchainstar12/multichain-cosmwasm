@@ -1,5 +1,7 @@
 use serde::de::DeserializeOwned;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+
+use crate::common::ChainOwner;
 
 use crate::{
     AllNftInfoResponse, ApprovalResponse, ApprovalsResponse, BidsResponse, ContractInfoResponse,
@@ -8,12 +10,6 @@ use crate::{
 };
 use cosmwasm_std::{CustomMsg, Deps, DepsMut, Env, MessageInfo, Response, StdResult};
 
-// Define or import ChainOwner type
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct ChainOwner {
-    pub owner: String,
-    pub chain_id: String,
-}
 use cw_utils::Expiration;
 
 pub trait Cw721<T, C>: Cw721Execute<T, C> + Cw721Query<T>

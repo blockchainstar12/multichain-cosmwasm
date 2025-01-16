@@ -22,7 +22,9 @@ use cw721::{
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
-use crate::state::{Approval, Cw721Contract, TokenInfo, ChainOwner};
+use crate::state::{Approval, Cw721Contract, TokenInfo};
+
+use cw721::common::ChainOwner;
 
 impl<'a, T, C, E, Q> Cw721Contract<'a, T, C, E, Q>
 where
@@ -320,7 +322,7 @@ where
         let chain_owners = match chain_owner {
             Some(co) => vec![co],
             None => vec![]
-        };;
+        };
 
         let longterm_rental = LongTermRental {
             islisted: None,
@@ -458,6 +460,7 @@ fn transfer_nft(
     }
 
     // Update owners
+    let prev_owner = token.owner.clone();
     token.owner = deps.api.addr_validate(&recipient)?;
     
     // Handle chain owners - keep existing ones and add/update new one
@@ -473,7 +476,6 @@ fn transfer_nft(
     self.tokens.save(deps.storage, &token_id, &token)?;
 
     // Rest of the function remains the same...
-    let prev_owner = token.owner;
     let fee_percentage = self.get_fee(deps.storage)?;
 
     let mut position: i32 = -1;

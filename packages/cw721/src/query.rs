@@ -1,6 +1,8 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Uint128};
 use cw_utils::Expiration;
+use crate::common::ChainOwner;
+
 #[cw_serde]
 pub enum Cw721QueryMsg {
     /// Return the owner of the given token, error if token does not exist
@@ -77,9 +79,8 @@ pub enum Cw721QueryMsg {
 
 #[cw_serde]
 pub struct OwnerOfResponse {
-    /// Owner of the token
     pub owner: String,
-    /// If set this address is approved to transfer/send the token as well
+    pub chain_owners: Vec<ChainOwner>,
     pub approvals: Vec<Approval>,
 }
 

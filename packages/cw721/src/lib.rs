@@ -1,7 +1,8 @@
 mod msg;
 mod query;
 mod receiver;
-mod traits;
+pub mod common;
+pub mod traits;
 
 pub use cw_utils::Expiration;
 

@@ -16,6 +16,8 @@ use cw_utils::maybe_addr;
 use crate::msg::{MinterResponse, QueryMsg};
 use crate::state::{Approval, Cw721Contract, TokenInfo};
 
+use cw721::common::ChainOwner;
+
 const DEFAULT_LIMIT: u32 = 4294967295;
 const MAX_LIMIT: u32 = 4294967295;
 
@@ -85,7 +87,7 @@ where
         let info = self.tokens.load(deps.storage, &token_id)?;
         Ok(OwnerOfResponse {
             owner: info.owner.to_string(),
-            chain_owners: info.chain_owners,
+            chain_owners: info.chain_owners.clone(),
             approvals: humanize_approvals(&env.block, &info, include_expired),
         })
     }
@@ -301,6 +303,7 @@ where
         let info = self.tokens.load(deps.storage, &token_id)?;
         Ok(AllNftInfoResponse {
             access: OwnerOfResponse {
+                chain_owners: info.chain_owners.clone(),
                 owner: info.owner.to_string(),
                 approvals: humanize_approvals(&env.block, &info, include_expired),
             },

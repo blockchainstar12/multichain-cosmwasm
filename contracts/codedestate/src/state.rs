@@ -11,6 +11,8 @@ use cw721::{
 };
 use cw_storage_plus::{Index, IndexList, IndexedMap, Item, Map, MultiIndex};
 
+use cw721::common::ChainOwner;
+
 pub struct Cw721Contract<'a, T, C, E, Q>
 where
     T: Serialize + DeserializeOwned + Clone,
@@ -157,11 +159,6 @@ where
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct ChainOwner {
-    pub chain_type: String, // e.g. "eth", "nibiru"
-    pub address: String,    // chain-specific address
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct TokenInfo<T> {
