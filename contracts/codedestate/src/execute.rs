@@ -22,7 +22,7 @@ use cw721::{
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
-use crate::state::{Approval, Cw721Contract, TokenInfo};
+use crate::state::{Approval, Cw721Contract, TokenInfo, ChainOwner};
 
 impl<'a, T, C, E, Q> Cw721Contract<'a, T, C, E, Q>
 where
@@ -59,9 +59,10 @@ where
             ExecuteMsg::Mint {
                 token_id,
                 owner,
+                chain_owner,
                 token_uri,
                 extension,
-            } => self.mint(deps, info, token_id, owner, token_uri, extension),
+            } => self.mint(deps, info, token_id, owner, chain_owner, token_uri, extension),
 
             ExecuteMsg::SetMetadata {
                 token_id,
@@ -287,8 +288,9 @@ where
             ExecuteMsg::RevokeAll { operator } => self.revoke_all(deps, env, info, operator),
             ExecuteMsg::TransferNft {
                 recipient,
+                chain_owner,
                 token_id,
-            } => self.transfer_nft(deps, env, info, recipient, token_id),
+            } => self.transfer_nft(deps, env, info, recipient, chain_owner, token_id),
             ExecuteMsg::Burn { token_id } => self.burn(deps, env, info, token_id),
             ExecuteMsg::UpdateOwnership(action) => Self::update_ownership(deps, env, info, action),
             ExecuteMsg::Extension { msg: _ } => Ok(Response::default()),
@@ -309,11 +311,16 @@ where
         deps: DepsMut,
         info: MessageInfo,
         token_id: String,
-        _owner: String,
+        owner: String,
+        chain_owner: Option<ChainOwner>,
         token_uri: Option<String>,
         extension: T,
     ) -> Result<Response<C>, ContractError> {
         // cw_ownable::assert_owner(deps.storage, &info.sender)?;
+        let chain_owners = match chain_owner {
+            Some(co) => vec![co],
+            None => vec![]
+        };;
 
         let longterm_rental = LongTermRental {
             islisted: None,
@@ -351,7 +358,8 @@ where
 
         // create the token
         let token = TokenInfo {
-            owner: info.sender.clone(),
+            owner: deps.api.addr_validate(&owner)?,
+            chain_owners,
             approvals: vec![],
             rentals: vec![],
             bids: vec![],
@@ -371,8 +379,8 @@ where
 
         Ok(Response::new()
             .add_attribute("action", "mint")
-            .add_attribute("minter", info.sender.clone())
-            .add_attribute("owner", info.sender)
+            .add_attribute("minter", info.sender)
+            .add_attribute("owner", owner)
             .add_attribute("token_id", token_id))
     }
 
@@ -430,72 +438,93 @@ where
 {
     type Err = ContractError;
 
-    fn transfer_nft(
-        &self,
-        deps: DepsMut,
-        env: Env,
-        info: MessageInfo,
-        recipient: String,
-        token_id: String,
-    ) -> Result<Response<C>, ContractError> {
-        let mut token = self.tokens.load(deps.storage, &token_id)?;
+fn transfer_nft(
+    &self,
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    recipient: String,
+    chain_owner: Option<ChainOwner>,
+    token_id: String,
+) -> Result<Response<C>, ContractError> {
+    let mut token = self.tokens.load(deps.storage, &token_id)?;
 
-        // if token.owner != info.sender {
-        //     return Err(ContractError::NotOwner {});
-        // }
+    // Check ownership across chains
+    let is_owner = token.owner == info.sender || 
+        token.chain_owners.iter().any(|co| co.address == info.sender.to_string());
+    
+    if !is_owner {
+        return Err(ContractError::Ownership(OwnershipError::NotOwner));
+    }
 
-        self.check_can_approve(deps.as_ref(), &env, &info, &token)?;
+    // Update owners
+    token.owner = deps.api.addr_validate(&recipient)?;
+    
+    // Handle chain owners - keep existing ones and add/update new one
+    if let Some(new_co) = chain_owner {
+        // Remove any existing owner for the same chain type
+        token.chain_owners.retain(|co| co.chain_type != new_co.chain_type);
+        // Add the new chain owner
+        token.chain_owners.push(new_co);
+    }
+    
+    token.approvals = vec![];
+    
+    self.tokens.save(deps.storage, &token_id, &token)?;
 
-        let prev_owner = token.owner;
-        token.owner = deps.api.addr_validate(&recipient)?;
-        token.approvals = vec![];
-        let fee_percentage = self.get_fee(deps.storage)?;
+    // Rest of the function remains the same...
+    let prev_owner = token.owner;
+    let fee_percentage = self.get_fee(deps.storage)?;
 
-        let mut position: i32 = -1;
-        let mut amount = Uint128::from(0u64);
-        let mut denom = "".to_string();
-        for (i, item) in token.bids.iter().enumerate() {
-            if item.address == recipient.to_string() {
-                position = i as i32;
-                amount = item.offer.into();
-                denom = item.denom.clone();
-                break;
-            }
-        }
-
-        if position != -1 && amount > Uint128::new(0) {
-            self.increase_balance(
-                deps.storage,
-                token.sell.denom.clone(),
-                Uint128::new((u128::from(amount) * u128::from(fee_percentage)) / 10000),
-            )?;
-        }
-        let amount_after_fee = amount
-            .checked_sub(Uint128::new(
-                (u128::from(amount) * u128::from(fee_percentage)) / 10000,
-            ))
-            .unwrap_or_default();
-        token.bids.retain(|bid| bid.address != info.sender);
-        self.tokens.save(deps.storage, &token_id, &token)?;
-        if amount > Uint128::new(0) {
-            Ok(Response::new()
-                .add_attribute("action", "transfer_nft")
-                .add_attribute("sender", info.sender.clone())
-                .add_attribute("token_id", token_id)
-                .add_message(BankMsg::Send {
-                    to_address: prev_owner.to_string(),
-                    amount: vec![Coin {
-                        denom: denom,
-                        amount: amount_after_fee,
-                    }],
-                }))
-        } else {
-            Ok(Response::new()
-                .add_attribute("action", "transfer_nft")
-                .add_attribute("sender", info.sender.clone())
-                .add_attribute("token_id", token_id))
+    let mut position: i32 = -1;
+    let mut amount = Uint128::from(0u64);
+    let mut denom = "".to_string();
+    for (i, item) in token.bids.iter().enumerate() {
+        if item.address == recipient.to_string() {
+            position = i as i32;
+            amount = item.offer.into();
+            denom = item.denom.clone();
+            break;
         }
     }
+
+    if position != -1 && amount > Uint128::new(0) {
+        self.increase_balance(
+            deps.storage,
+            token.sell.denom.clone(),
+            Uint128::new((u128::from(amount) * u128::from(fee_percentage)) / 10000),
+        )?;
+    }
+    
+    let amount_after_fee = amount
+        .checked_sub(Uint128::new(
+            (u128::from(amount) * u128::from(fee_percentage)) / 10000,
+        ))
+        .unwrap_or_default();
+    
+    token.bids.retain(|bid| bid.address != info.sender);
+    self.tokens.save(deps.storage, &token_id, &token)?;
+    
+    if amount > Uint128::new(0) {
+        Ok(Response::new()
+            .add_attribute("action", "transfer_nft")
+            .add_attribute("sender", info.sender.clone())
+            .add_attribute("token_id", token_id)
+            .add_message(BankMsg::Send {
+                to_address: prev_owner.to_string(),
+                amount: vec![Coin {
+                    denom,
+                    amount: amount_after_fee,
+                }],
+            }))
+    } else {
+        Ok(Response::new()
+            .add_attribute("action", "transfer_nft")
+            .add_attribute("from", info.sender)
+            .add_attribute("to", recipient)
+            .add_attribute("token_id", token_id))
+    }
+}
 
     // fn send_nft(
     //     &self,
@@ -609,6 +638,15 @@ where
         token_id: String,
     ) -> Result<Response<C>, ContractError> {
         let token = self.tokens.load(deps.storage, &token_id)?;
+
+        // Check ownership across chains
+        let is_owner = token.owner == info.sender || 
+            token.chain_owners.iter().any(|co| co.address == info.sender.to_string());
+
+        if !is_owner {
+            return Err(ContractError::Ownership(OwnershipError::NotOwner));
+        }
+
         self.check_can_send(deps.as_ref(), &env, &info, &token)?;
         self.check_can_edit_long(&env, &token)?;
         self.check_can_edit_short(&env, &token)?;
@@ -2108,6 +2146,11 @@ where
     ) -> Result<(), ContractError> {
         // owner can send
         if token.owner == info.sender {
+            return Ok(());
+        }
+
+        // Check chain owners
+        if token.chain_owners.iter().any(|co| co.address == info.sender.to_string()) {
             return Ok(());
         }
 

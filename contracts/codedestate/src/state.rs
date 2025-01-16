@@ -158,9 +158,18 @@ where
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct ChainOwner {
+    pub chain_type: String, // e.g. "eth", "nibiru"
+    pub address: String,    // chain-specific address
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct TokenInfo<T> {
     /// The owner of the newly minted NFT
-    pub owner: Addr,
+    pub owner: Addr, // owner of the NFT on nibiru
+
+    pub chain_owners: Vec<ChainOwner>, // owner of the NFT on other chains
+
     /// Approvals are stored here, as we clear them all upon transfer and cannot accumulate much
     pub approvals: Vec<Approval>,
 

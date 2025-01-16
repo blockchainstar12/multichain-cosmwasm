@@ -85,6 +85,7 @@ where
         let info = self.tokens.load(deps.storage, &token_id)?;
         Ok(OwnerOfResponse {
             owner: info.owner.to_string(),
+            chain_owners: info.chain_owners,
             approvals: humanize_approvals(&env.block, &info, include_expired),
         })
     }
@@ -236,7 +237,7 @@ where
     fn all_tokens(
         &self,
         deps: Deps,
-        _owner: String,
+        owner: String,
         start_after: Option<String>,
         limit: Option<u32>,
     ) -> StdResult<TokensResponse> {

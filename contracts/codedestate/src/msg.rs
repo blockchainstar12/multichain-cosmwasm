@@ -5,6 +5,7 @@ use cw721::CancellationItem;
 use cw721::Expiration;
 use cw_ownable::{cw_ownable_execute, cw_ownable_query};
 use schemars::JsonSchema;
+use crate::state::ChainOwner;
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -29,6 +30,7 @@ pub enum ExecuteMsg<T, E> {
     TransferNft {
         recipient: String,
         token_id: String,
+        chain_owner: Option<ChainOwner>,
     },
     /// Send is a base message to transfer a token to a contract and trigger an action
     /// on the receiving contract.
@@ -75,6 +77,8 @@ pub enum ExecuteMsg<T, E> {
         /// Should point to a JSON file that conforms to the ERC721
         /// Metadata JSON Schema
         token_uri: Option<String>,
+        /// Any custom extension used by this contract
+        chain_owner: Option<ChainOwner>,
         /// Any custom extension used by this contract
         extension: T,
     },
