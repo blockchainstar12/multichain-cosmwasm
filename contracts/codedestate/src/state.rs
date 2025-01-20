@@ -11,6 +11,7 @@ use cw721::{
 };
 use cw_storage_plus::{Index, IndexList, IndexedMap, Item, Map, MultiIndex};
 
+pub const BRIDGE_WALLET: &str = "nibiru...";
 pub struct Cw721Contract<'a, T, C, E, Q>
 where
     T: Serialize + DeserializeOwned + Clone,
@@ -161,6 +162,15 @@ where
 pub struct Owner {
     pub chain_type: String,
     pub address: String,
+}
+
+impl Owner {
+    pub fn validate_sender(&self, sender: &Addr) -> bool {
+        match self.chain_type.as_str() {
+            "nibiru" => self.address == sender.to_string(),
+            _ => sender.to_string() == BRIDGE_WALLET,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

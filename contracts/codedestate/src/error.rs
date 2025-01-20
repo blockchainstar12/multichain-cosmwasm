@@ -75,4 +75,16 @@ pub enum ContractError {
 
     #[error("Approval not found for: {spender}")]
     ApprovalNotFound { spender: String },
+
+    #[error("Unauthorized: Invalid sender for chain type")]
+    InvalidSender{},
+    
+    #[error("Unauthorized")]
+    Unauthorized {},
+    
+    #[error("Invalid Bridge")]
+    InvalidBridge {},
+
+    #[error("Payment validation error")]
+    NoPayment {},
 }

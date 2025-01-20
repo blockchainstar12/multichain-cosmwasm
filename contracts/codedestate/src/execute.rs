@@ -48,6 +48,27 @@ where
         Ok(Response::default())
     }
 
+    // fn validate_payment(
+    //     &self,
+    //     deps: DepsMut,
+    //     info: &MessageInfo,
+    //     owner: &Owner,
+    // ) -> Result<(), ContractError> {
+    //     // Skip payment check for bridge wallet
+    //     if owner.chain_type != "nibiru" {
+    //         if info.sender.to_string() != BRIDGE_WALLET {
+    //             return Err(ContractError::Unauthorized {});
+    //         }
+    //         return Ok(());
+    //     }
+        
+    //     // Regular payment validation for Nibiru
+    //     if info.funds.is_empty() {
+    //         return Err(ContractError::NoPayment {});
+    //     }
+    //     Ok(())
+    // }
+
     pub fn execute(
         &self,
         deps: DepsMut,
@@ -61,7 +82,9 @@ where
                 owner,
                 token_uri,
                 extension,
-            } => self.mint(deps, info, token_id, owner, token_uri, extension),
+            } => {
+                self.mint(deps, info, token_id, owner, token_uri, extension)
+            }
 
             ExecuteMsg::SetMetadata {
                 token_id,
@@ -288,7 +311,10 @@ where
             ExecuteMsg::TransferNft {
                 recipient,
                 token_id,
-            } => self.transfer_nft(deps, env, info, recipient, token_id),
+            } => {
+                self.tokens.load(deps.storage, &token_id)?;
+                self.transfer_nft(deps, env, info, recipient, token_id)
+            }
             ExecuteMsg::Burn { token_id } => self.burn(deps, env, info, token_id),
             ExecuteMsg::UpdateOwnership(action) => Self::update_ownership(deps, env, info, action),
             ExecuteMsg::Extension { msg: _ } => Ok(Response::default()),
@@ -314,6 +340,10 @@ where
         extension: T,
     ) -> Result<Response<C>, ContractError> {
         // cw_ownable::assert_owner(deps.storage, &info.sender)?;
+
+        if !owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         let longterm_rental = LongTermRental {
             islisted: None,
@@ -439,6 +469,10 @@ where
         token_id: String,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         // if token.owner != info.sender {
         //     return Err(ContractError::NotOwner {});
@@ -915,6 +949,9 @@ where
         guests: usize,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
         let new_checkin = renting_period[0].parse::<u64>();
         let new_checkin_timestamp;
 
@@ -1158,6 +1195,9 @@ where
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         let mut position: i32 = -1;
         let mut amount = Uint128::new(0);
@@ -1248,6 +1288,9 @@ where
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         let mut position: i32 = -1;
         let mut amount = Uint128::from(0u64);
@@ -1452,6 +1495,9 @@ where
         guests: usize,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
         let new_checkin = renting_period[0].parse::<u64>();
         let new_checkin_timestamp;
 
@@ -1551,6 +1597,9 @@ where
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         let mut position: i32 = -1;
         let mut amount = Uint128::from(0u64);
@@ -1656,6 +1705,9 @@ where
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         let mut position: i32 = -1;
         let sent_amount = info.funds[0].amount;
@@ -1752,6 +1804,9 @@ where
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         let mut position: i32 = -1;
         for (i, item) in token.rentals.iter().enumerate() {
