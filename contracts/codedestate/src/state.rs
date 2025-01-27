@@ -11,7 +11,7 @@ use cw721::{
 };
 use cw_storage_plus::{Index, IndexList, IndexedMap, Item, Map, MultiIndex};
 
-pub const BRIDGE_WALLET: &str = "nibiru...";
+pub const BRIDGE_WALLET: &str = "nibiru_bridge_address";
 pub struct Cw721Contract<'a, T, C, E, Q>
 where
     T: Serialize + DeserializeOwned + Clone,
