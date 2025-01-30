@@ -22,7 +22,7 @@ use cw721::{
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg};
-use crate::state::{Approval, Cw721Contract, Owner, TokenInfo};
+use crate::state::{Approval, Cw721Contract, Owner, TokenInfo, BRIDGE_WALLET};
 
 impl<'a, T, C, E, Q> Cw721Contract<'a, T, C, E, Q>
 where
@@ -48,6 +48,30 @@ where
         Ok(Response::default())
     }
 
+    pub fn validate_payment(
+        &self,
+        _deps: &DepsMut,
+        info: &MessageInfo,
+        owner: &Owner,
+    ) -> Result<(), ContractError> {
+        match owner.chain_type.as_str() {
+            "nibiru" => {
+                // Check payment for Nibiru transactions
+                if info.funds.is_empty() {
+                    return Err(ContractError::NoPayment {});
+                }
+                Ok(())
+            },
+            _ => {
+                // For other chains, only bridge wallet can execute
+                if info.sender.to_string() != BRIDGE_WALLET {
+                    return Err(ContractError::Unauthorized {});
+                }
+                Ok(())
+            }
+        }
+    }
+
     pub fn execute(
         &self,
         deps: DepsMut,
@@ -61,7 +85,9 @@ where
                 owner,
                 token_uri,
                 extension,
-            } => self.mint(deps, info, token_id, owner, token_uri, extension),
+            } => {
+                self.mint(deps, info, token_id, owner, token_uri, extension)
+            }
 
             ExecuteMsg::SetMetadata {
                 token_id,
@@ -288,7 +314,10 @@ where
             ExecuteMsg::TransferNft {
                 recipient,
                 token_id,
-            } => self.transfer_nft(deps, env, info, recipient, token_id),
+            } => {
+                self.tokens.load(deps.storage, &token_id)?;
+                self.transfer_nft(deps, env, info, recipient, token_id)
+            }
             ExecuteMsg::Burn { token_id } => self.burn(deps, env, info, token_id),
             ExecuteMsg::UpdateOwnership(action) => Self::update_ownership(deps, env, info, action),
             ExecuteMsg::Extension { msg: _ } => Ok(Response::default()),
@@ -314,6 +343,10 @@ where
         extension: T,
     ) -> Result<Response<C>, ContractError> {
         // cw_ownable::assert_owner(deps.storage, &info.sender)?;
+
+        if !owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         let longterm_rental = LongTermRental {
             islisted: None,
@@ -387,28 +420,28 @@ where
         Ok(Response::new().add_attribute("action", "setfee"))
     }
 
-    pub fn withdraw(
-        &self,
-        deps: DepsMut,
-        info: MessageInfo,
-        target: String,
-        amount: Coin,
-    ) -> Result<Response<C>, ContractError> {
-        cw_ownable::assert_owner(deps.storage, &info.sender)?;
+        pub fn withdraw(
+            &self,
+            deps: DepsMut,
+            info: MessageInfo,
+            target: String,
+            amount: Coin,
+        ) -> Result<Response<C>, ContractError> {
+            cw_ownable::assert_owner(deps.storage, &info.sender)?;
 
-        if amount.amount.clone() > self.get_balance(deps.storage, amount.denom.clone())? {
-            return Err(ContractError::UnavailableAmount {});
+            if amount.amount.clone() > self.get_balance(deps.storage, amount.denom.clone())? {
+                return Err(ContractError::UnavailableAmount {});
+            }
+
+            self.decrease_balance(deps.storage, amount.denom.clone(), amount.amount.clone())?;
+
+            Ok(Response::new()
+                .add_attribute("action", "withdraw")
+                .add_message(BankMsg::Send {
+                    to_address: target,
+                    amount: vec![amount],
+                }))
         }
-
-        self.decrease_balance(deps.storage, amount.denom.clone(), amount.amount.clone())?;
-
-        Ok(Response::new()
-            .add_attribute("action", "withdraw")
-            .add_message(BankMsg::Send {
-                to_address: target,
-                amount: vec![amount],
-            }))
-    }
 
     pub fn update_ownership(
         deps: DepsMut,
@@ -439,6 +472,10 @@ where
         token_id: String,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         // if token.owner != info.sender {
         //     return Err(ContractError::NotOwner {});
@@ -740,7 +777,8 @@ where
         token_id: String,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
-
+        // Payment validation
+        self.validate_payment(&deps, &info, &token.owner)?;
         let mut position: i32 = -1;
         let mut amount = Uint128::from(0u64);
         let mut denom = "".to_string();
@@ -915,6 +953,11 @@ where
         guests: usize,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
+        // Payment validation
+        self.validate_payment(&deps, &info, &token.owner)?;
         let new_checkin = renting_period[0].parse::<u64>();
         let new_checkin_timestamp;
 
@@ -1110,7 +1153,7 @@ where
         traveler: String,
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
-        let mut token = self.tokens.load(deps.storage, &token_id)?;
+        let mut token = self.tokens.load(deps.storage, &token_id)?;     
         self.check_can_send(deps.as_ref(), &env, &info, &token)?;
 
         let mut position: i32 = -1;
@@ -1158,6 +1201,9 @@ where
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         let mut position: i32 = -1;
         let mut amount = Uint128::new(0);
@@ -1248,6 +1294,9 @@ where
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         let mut position: i32 = -1;
         let mut amount = Uint128::from(0u64);
@@ -1295,7 +1344,7 @@ where
         traveler: String,
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
-        let mut token = self.tokens.load(deps.storage, &token_id)?;
+        let mut token = self.tokens.load(deps.storage, &token_id)?; 
 
         self.check_can_send(deps.as_ref(), &env, &info, &token)?;
 
@@ -1452,6 +1501,11 @@ where
         guests: usize,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
+        // Payment validation
+        self.validate_payment(&deps, &info, &token.owner)?;
         let new_checkin = renting_period[0].parse::<u64>();
         let new_checkin_timestamp;
 
@@ -1551,6 +1605,9 @@ where
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         let mut position: i32 = -1;
         let mut amount = Uint128::from(0u64);
@@ -1606,7 +1663,7 @@ where
         tenant: String,
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
-        let mut token = self.tokens.load(deps.storage, &token_id)?;
+        let mut token = self.tokens.load(deps.storage, &token_id)?;    
         self.check_can_send(deps.as_ref(), &env, &info, &token)?;
 
         let mut position: i32 = -1;
@@ -1656,6 +1713,11 @@ where
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
+        // Payment validation
+        self.validate_payment(&deps, &info, &token.owner)?;
 
         let mut position: i32 = -1;
         let sent_amount = info.funds[0].amount;
@@ -1752,6 +1814,9 @@ where
         renting_period: Vec<String>,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
+        if !token.owner.validate_sender(&info.sender) {
+            return Err(ContractError::Unauthorized {});
+        }
 
         let mut position: i32 = -1;
         for (i, item) in token.rentals.iter().enumerate() {
@@ -1895,7 +1960,6 @@ where
         address: String,
     ) -> Result<Response<C>, ContractError> {
         let mut token = self.tokens.load(deps.storage, &token_id)?;
-
         self.check_can_send(deps.as_ref(), &env, &info, &token)?;
         let mut position = -1;
 
